@@ -1,4 +1,4 @@
-name: ETHER SERVER V2.1-FIXED
+name: ETHER SERVER V2.1  Bokachoda
 
 on:
   workflow_dispatch:
@@ -27,7 +27,7 @@ jobs:
       TAILNET: "seadorhassan@gmail.com"
 
     steps:
-    # ---------------- BASIC ----------------
+    # ---------------- BASIC INFO ----------------
     - name: Show runner info
       shell: pwsh
       run: |
@@ -53,7 +53,7 @@ jobs:
           echo "TS_AUTH_KEY=$($res.key)" >> $env:GITHUB_ENV
         } else {
           cat key_response.json
-          throw "Tailscale API did not return a key."
+          throw "Tailscale API did not return a key. Check your Token!"
         }
 
     # ---------------- TAILSCALE INSTALL & START ----------------
@@ -68,7 +68,7 @@ jobs:
         Start-Service Tailscale
         Start-Sleep 10
         
-        # Using the auto-generated key
+        # Using the auto-generated key from the previous step
         & $exe up --authkey "$env:TS_AUTH_KEY" --hostname "bullet-${{ github.run_id }}"
         
         for ($i=0; $i -lt 10; $i++) {
@@ -108,19 +108,21 @@ jobs:
         $workDir = "D:\Work"
         if (!(Test-Path $workDir)) { New-Item -ItemType Directory -Force -Path $workDir }
         
+        # Download files for Striker Pro automation
         gdown --folder "17fags-9sHCQU2ZlNe1BySx-7gdU1cla2" --output "$workDir\fbcreator_folder"
         gdown "166R8NrD3kHJZTNdhI2P8NIEzurgpf5Gp" -O "$workDir\fb.mumudata"
         
         $mumuUrl = "https://a11.gdl.netease.com/MuMu_5.0.7_gw-win-download_all_1761811684.exe"
         Invoke-WebRequest -Uri $mumuUrl -OutFile "$workDir\mumu_installer.exe"
-        Write-Host "Success: All files ready in D:\Work"
+        Write-Host "Success: All files are ready in D:\Work"
 
     # ---------------- KEEP ALIVE ----------------
     - name: Keep alive
       shell: pwsh
       run: |
         Write-Host "Server is running! Connect via RDP to: $env:TS_IP"
-        Start-Sleep -Seconds 21600 # 6 Hours
+        # 6 hours runtime
+        Start-Sleep -Seconds 21600 
 
     - name: Done
       shell: pwsh
