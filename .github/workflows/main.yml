@@ -1,4 +1,4 @@
-name: ETHER SERVER
+name: ETHER SERVER 5.3648
 
 on:
   workflow_dispatch:
@@ -20,40 +20,39 @@ jobs:
     env:
       RDP_USER: sedor
       RDP_PASS: Mariya@1981
-      MAIN_RUNTIME_MIN: 360
       MUMU_MGR: 'C:\Program Files\Netease\MuMuPlayer\nx_main\MuMuManager.exe'
-      # Apnar deya API Token ekhane set kora hoyeche
+      # Apnar deya API Access Token
       TS_API_TOKEN: "tskey-api-kfijnds9kK11CNTRL-rwjxd1ZXjvABKqHPeJi3vAFJzQGURkEvg"
-      # Apnar Tailscale mail/id dashboard theke ekhane boshun
-      TAILNET_NAME: "arman.github" 
 
     steps:
 
-    # ---------------- BASIC ----------------
+    # ---------------- BASIC INFO ----------------
     - name: Show runner info
       shell: pwsh
       run: |
         whoami
         systeminfo | findstr /B /C:"OS Name"
 
-    # ---------------- TAILSCALE (API AUTO) ----------------
+    # ---------------- TAILSCALE AUTO-AUTH ----------------
     - name: Install and Start Tailscale
       shell: pwsh
       run: |
+        # 1. Install Tailscale
         $exe = "$env:ProgramFiles\Tailscale\tailscale.exe"
-
         if (-not (Test-Path $exe)) {
           Invoke-WebRequest `
             https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi `
             -OutFile tailscale.msi
           Start-Process msiexec.exe -ArgumentList "/i tailscale.msi /quiet /norestart" -Wait
         }
-
         Start-Service Tailscale
-        Start-Sleep 10
+        Start-Sleep 5
 
-        # API use kore temporary Auth Key generate kora hocche
+        # 2. Auto-detect Tailnet Name and Generate Ephemeral Key
         $authHeader = @{ Authorization = "Bearer $($env:TS_API_TOKEN)" }
+        $whois = Invoke-RestMethod -Uri "https://api.tailscale.com/api/v2/tailnets" -Headers $authHeader
+        $tailnet = $whois.tailnets[0]
+        
         $body = @{
             capabilities = @{
                 devices = @{
@@ -67,14 +66,15 @@ jobs:
             expirySeconds = 3600
         } | ConvertTo-Json
 
-        $apiUrl = "https://api.tailscale.com/api/v2/tailnet/$($env:TAILNET_NAME)/keys"
+        $apiUrl = "https://api.tailscale.com/api/v2/tailnet/$tailnet/keys"
         $response = Invoke-RestMethod -Uri $apiUrl -Method Post -Headers $authHeader -Body $body -ContentType "application/json"
         $newAuthKey = $response.key
 
-        # Unique hostname jate IP conflict na hoy
+        # 3. Connect with unique hostname to avoid conflicts
         $randomName = "bullet-$(Get-Random -Minimum 100 -Maximum 999)"
         & $exe up --authkey "$newAuthKey" --hostname "$randomName"
 
+        # 4. Fetch Tailscale IP
         for ($i=0; $i -lt 10; $i++) {
           $ip = & $exe ip -4 | Select-Object -First 1
           if ($ip) { break }
