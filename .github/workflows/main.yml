@@ -80,7 +80,7 @@ jobs:
    
 
     # ---------------- 5. KEEP ALIVE ----------------
-    - name: Your IP: "$env:TS_IP"
+    
     - name: Keep alive
       shell: pwsh
       run: |
