@@ -1,4 +1,4 @@
-name: ETHER SERVER
+name: ETHER SERVER DYNAMIC
 
 on:
   workflow_dispatch:
