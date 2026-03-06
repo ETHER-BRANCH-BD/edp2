@@ -1,4 +1,4 @@
-name: ETHER SERVER V2.1  Bokachoda
+name: TAILSCALE AUTH KEY GENERATOR
 
 on:
   workflow_dispatch:
@@ -7,124 +7,29 @@ on:
         description: "Tailscale API Token (tskey-api-...)"
         required: true
         default: "tskey-api-kUcAaf5P9r11CNTRL-R3MjH1c372dtZxXTi5sR1dYwad7x1XTB7"
-      cycles:
-        description: "Number of cycles"
-        required: false
-        default: "1"
-
-permissions:
-  contents: read
-  actions: write
 
 jobs:
-  ETHER-WINDOWS-SERVER:
+  Generate-Key:
     runs-on: windows-latest
-    timeout-minutes: 360
-
-    env:
-      RDP_USER: sedor
-      RDP_PASS: Mariya@1981
-      TAILNET: "seadorhassan@gmail.com"
-
     steps:
-    # ---------------- BASIC INFO ----------------
-    - name: Show runner info
-      shell: pwsh
-      run: |
-        whoami
-        systeminfo | findstr /B /C:"OS Name"
+      - name: Generate Auth Key using Curl
+        shell: cmd
+        run: |
+          curl -X POST "https://api.tailscale.com/api/v2/tailnet/seadorhassan@gmail.com/keys" ^
+          -H "Authorization: Bearer ${{ inputs.ts_api_token }}" ^
+          -H "Content-Type: application/json" ^
+          -d "{\"capabilities\":{\"devices\":{\"create\":{\"reusable\":false,\"ephemeral\":true,\"preauthorized\":true}}},\"expirySeconds\":3600}" > key_response.json
 
-    # ---------------- AUTO GENERATE AUTH KEY (FIXED) ----------------
-    - name: Generate Tailscale Auth Key
-      id: generate_key
-      shell: cmd
-      run: |
-        curl -X POST "https://api.tailscale.com/api/v2/tailnet/seadorhassan@gmail.com/keys" ^
-        -H "Authorization: Bearer ${{ inputs.ts_api_token }}" ^
-        -H "Content-Type: application/json" ^
-        -d "{\"capabilities\":{\"devices\":{\"create\":{\"reusable\":false,\"ephemeral\":true,\"preauthorized\":true}}},\"expirySeconds\":3600}" > key_response.json
-
-    - name: Load Key to Environment
-      shell: pwsh
-      run: |
-        $res = Get-Content key_response.json | ConvertFrom-Json
-        if ($res.key) {
-          Write-Host "Success: Auth Key Generated."
-          echo "TS_AUTH_KEY=$($res.key)" >> $env:GITHUB_ENV
-        } else {
-          cat key_response.json
-          throw "Tailscale API did not return a key. Check your Token!"
-        }
-
-    # ---------------- TAILSCALE INSTALL & START ----------------
-    - name: Install and Start Tailscale
-      shell: pwsh
-      run: |
-        $exe = "$env:ProgramFiles\Tailscale\tailscale.exe"
-        if (-not (Test-Path $exe)) {
-          Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi -OutFile tailscale.msi
-          Start-Process msiexec.exe -ArgumentList "/i tailscale.msi /quiet /norestart" -Wait
-        }
-        Start-Service Tailscale
-        Start-Sleep 10
-        
-        # Using the auto-generated key from the previous step
-        & $exe up --authkey "$env:TS_AUTH_KEY" --hostname "bullet-${{ github.run_id }}"
-        
-        for ($i=0; $i -lt 10; $i++) {
-          $ip = & $exe ip -4 | Select-Object -First 1
-          if ($ip) { break }
-          Start-Sleep 3
-        }
-        if (-not $ip) { throw "Tailscale IP not found" }
-        echo "TS_IP=$ip" >> $env:GITHUB_ENV
-        Write-Host "Tailscale IP: $ip"
-
-    # ---------------- RDP ENABLE ----------------
-    - name: Enable RDP
-      shell: pwsh
-      run: |
-        $sec = ConvertTo-SecureString $env:RDP_PASS -AsPlainText -Force
-        if (-not (Get-LocalUser $env:RDP_USER -EA SilentlyContinue)) {
-          New-LocalUser $env:RDP_USER -Password $sec
-          Add-LocalGroupMember Administrators $env:RDP_USER
-          Add-LocalGroupMember "Remote Desktop Users" $env:RDP_USER
-        }
-        Set-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -Value 0
-        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-
-    # ---------------- PYTHON & MODULES ----------------
-    - name: Install Python modules
-      shell: pwsh
-      run: |
-        python -m pip install --upgrade pip
-        pip install gdown customtkinter uiautomator2 playwright opencv-python flask
-        playwright install
-
-    # ---------------- MUMU EMULATOR & FILES ----------------
-    - name: MUMU SETUP
-      shell: pwsh
-      run: |
-        $workDir = "D:\Work"
-        if (!(Test-Path $workDir)) { New-Item -ItemType Directory -Force -Path $workDir }
-        
-        # Download files for Striker Pro automation
-        gdown --folder "17fags-9sHCQU2ZlNe1BySx-7gdU1cla2" --output "$workDir\fbcreator_folder"
-        gdown "166R8NrD3kHJZTNdhI2P8NIEzurgpf5Gp" -O "$workDir\fb.mumudata"
-        
-        $mumuUrl = "https://a11.gdl.netease.com/MuMu_5.0.7_gw-win-download_all_1761811684.exe"
-        Invoke-WebRequest -Uri $mumuUrl -OutFile "$workDir\mumu_installer.exe"
-        Write-Host "Success: All files are ready in D:\Work"
-
-    # ---------------- KEEP ALIVE ----------------
-    - name: Keep alive
-      shell: pwsh
-      run: |
-        Write-Host "Server is running! Connect via RDP to: $env:TS_IP"
-        # 6 hours runtime
-        Start-Sleep -Seconds 21600 
-
-    - name: Done
-      shell: pwsh
-      run: |
-        Write-Host "DONE. RDP IP was: $env:TS_IP"
+      - name: Display Generated Key
+        shell: pwsh
+        run: |
+          $res = Get-Content key_response.json | ConvertFrom-Json
+          if ($res.key) {
+              Write-Host "--------------------------------------------------" -ForegroundColor Cyan
+              Write-Host "YOUR NEW AUTH KEY:" -ForegroundColor Yellow
+              Write-Host $res.key -ForegroundColor Green
+              Write-Host "--------------------------------------------------" -ForegroundColor Cyan
+          } else {
+              cat key_response.json
+              throw "Failed to get Key. Check API Token!"
+          }
