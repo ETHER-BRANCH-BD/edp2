@@ -1,4 +1,4 @@
-name: ETHER SERVER mula
+name: ETHER SERVER
 
 on:
   workflow_dispatch:
@@ -24,7 +24,6 @@ jobs:
       # Apnar OAuth Credentials
       TS_CLIENT_ID: "kQymft8y2J11CNTRL"
       TS_CLIENT_SECRET: "tskey-client-kQymft8y2J11CNTRL-Hgcg4hNmdRSaBWP1H1TmSSQ4b54cD7oE"
-      TAILNET_NAME: "armanhossain00778.github" # Apnar dashboard theke
 
     steps:
 
@@ -35,7 +34,7 @@ jobs:
         whoami
         systeminfo | findstr /B /C:"OS Name"
 
-    # ---------------- TAILSCALE SETUP ----------------
+    # ---------------- TAILSCALE SETUP (SMART AUTO) ----------------
     - name: Install and Start Tailscale
       shell: pwsh
       run: |
@@ -50,7 +49,7 @@ jobs:
         Start-Service Tailscale
         Start-Sleep 5
 
-        # 2. Get Access Token using OAuth Client ID & Secret
+        # 2. Get Access Token via OAuth
         $oauthBody = @{
             client_id     = $env:TS_CLIENT_ID
             client_secret = $env:TS_CLIENT_SECRET
@@ -58,37 +57,36 @@ jobs:
         $tokenResponse = Invoke-RestMethod -Uri "https://api.tailscale.com/api/v2/oauth/token" -Method Post -Body $oauthBody
         $accessToken = $tokenResponse.access_token
 
-        # 3. Generate Ephemeral Auth Key via API
+        # 3. AUTO-DETECT TAILNET NAME (Error fix)
         $authHeader = @{ Authorization = "Bearer $accessToken" }
+        $tailnetInfo = Invoke-RestMethod -Uri "https://api.tailscale.com/api/v2/tailnets" -Headers $authHeader
+        $myTailnet = $tailnetInfo.tailnets[0]
+        Write-Host "Detected Tailnet Name: $myTailnet"
+
+        # 4. Generate Ephemeral Auth Key
         $keyBody = @{
             capabilities = @{
                 devices = @{
-                    create = @{
-                        reusable = $false
-                        ephemeral = $true
-                        preauthorized = $true
-                    }
+                    create = @{ reusable = $false; ephemeral = $true; preauthorized = $true }
                 }
             }
             expirySeconds = 3600
         } | ConvertTo-Json
 
-        $apiUrl = "https://api.tailscale.com/api/v2/tailnet/$($env:TAILNET_NAME)/keys"
+        $apiUrl = "https://api.tailscale.com/api/v2/tailnet/$myTailnet/keys"
         $keyResponse = Invoke-RestMethod -Uri $apiUrl -Method Post -Headers $authHeader -Body $keyBody -ContentType "application/json"
         $newAuthKey = $keyResponse.key
 
-        # 4. Connect with unique hostname
+        # 5. Connect
         $randomName = "bullet-$(Get-Random -Minimum 100 -Maximum 999)"
         & $exe up --authkey "$newAuthKey" --hostname "$randomName"
 
-        # 5. Fetch Tailscale IP
+        # 6. Fetch IP
         for ($i=0; $i -lt 15; $i++) {
           $ip = & $exe ip -4 | Select-Object -First 1
           if ($ip) { break }
           Start-Sleep 3
         }
-
-        if (-not $ip) { throw "Tailscale IP not found" }
         echo "TS_IP=$ip" >> $env:GITHUB_ENV
         Write-Host "Tailscale IP: $ip"
 
@@ -105,43 +103,22 @@ jobs:
         Set-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-    # ---------------- PYTHON & TOOLS ----------------
-    - name: Install Python modules
+    # ---------------- TOOLS & MUMU ----------------
+    - name: Install Apps & MuMu
       shell: pwsh
       run: |
-        python -m pip install --upgrade pip
         pip install gdown customtkinter uiautomator2 playwright opencv-python
         playwright install
-
-    # ---------------- MUMU AUTO SETUP ----------------
-    - name: Auto MuMu Download & Restore
-      shell: pwsh
-      run: |
+        
         gdown "166R8NrD3kHJZTNdhI2P8NIEzurgpf5Gp" -O "$env:USERPROFILE\Downloads\fb.mumudata" 
-        gdown --folder "17fags-9sHCQU2ZlNe1BySx-7gdU1cla2" --output "$env:USERPROFILE\Desktop\fbcreator_folder"
-
         $mumuUrl = "https://a11.gdl.netease.com/MuMu_5.0.7_gw-win-download_all_1761811684.exe"
         Invoke-WebRequest -Uri $mumuUrl -OutFile "$env:TEMP\mumu.exe"
         Start-Process "$env:TEMP\mumu.exe" -ArgumentList "/S" -Wait
         Start-Sleep -Seconds 50
 
-        if (Test-Path $env:MUMU_MGR) {
-            for ($i=0; $i -lt 3; $i++) {
-                & $env:MUMU_MGR restore --index $i --file "$env:USERPROFILE\Downloads\fb.mumudata"
-                & $env:MUMU_MGR config index $i cpu 1 memory 4096 graphics_type 2 disk_mode 2
-                & $env:MUMU_MGR launch index $i
-                Start-Sleep -Seconds 15
-            }
-        }
-
     # ---------------- KEEP ALIVE ----------------
     - name: Keep alive
       shell: pwsh
       run: |
-        Write-Host "Connect via RDP to IP: $env:TS_IP"
+        Write-Host "Connect RDP to IP: $env:TS_IP"
         Start-Sleep -Seconds 21600
-
-    - name: Done
-      shell: pwsh
-      run: |
-        Write-Host "DONE"
