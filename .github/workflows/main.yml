@@ -77,31 +77,7 @@ jobs:
         Set-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-    # ---------------- 4. TOOLS & MUMU SETUP ----------------
-    - name: Install Tools & MuMu
-      shell: pwsh
-      run: |
-        # Python Modules
-        python -m pip install --upgrade pip
-        pip install gdown customtkinter uiautomator2 playwright opencv-python flask
-        playwright install
-        
-        # Download MuMu & Data
-        gdown "166R8NrD3kHJZTNdhI2P8NIEzurgpf5Gp" -O "$env:USERPROFILE\Downloads\fb.mumudata" 
-        gdown --folder "17fags-9sHCQU2ZlNe1BySx-7gdU1cla2" --output "$env:USERPROFILE\Desktop\fbcreator_folder"
-        
-        Invoke-WebRequest "https://a11.gdl.netease.com/MuMu_5.0.7_gw-win-download_all_1761811684.exe" -OutFile "$env:TEMP\mumu.exe"
-        Start-Process "$env:TEMP\mumu.exe" -ArgumentList "/S" -Wait
-        Start-Sleep -Seconds 50
-
-        if (Test-Path $env:MUMU_MGR) {
-            for ($i=0; $i -lt 3; $i++) {
-                & $env:MUMU_MGR restore --index $i --file "$env:USERPROFILE\Downloads\fb.mumudata"
-                & $env:MUMU_MGR config index $i cpu 1 memory 4096 graphics_type 2 disk_mode 2
-                & $env:MUMU_MGR launch index $i
-                Start-Sleep -Seconds 15
-            }
-        }
+   
 
     # ---------------- 5. KEEP ALIVE ----------------
     - name: Keep alive
