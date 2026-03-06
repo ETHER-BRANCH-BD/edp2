@@ -1,4 +1,4 @@
-name: ETHER SERVER 5.3648
+name: ETHER SERVER lllll
 
 on:
   workflow_dispatch:
@@ -85,7 +85,7 @@ jobs:
         echo "TS_IP=$ip" >> $env:GITHUB_ENV
         Write-Host "Tailscale IP: $ip"
 
-    # ---------------- RDP ----------------
+    # ---------------- RDP SETUP ----------------
     - name: Enable RDP
       shell: pwsh
       run: |
@@ -98,8 +98,8 @@ jobs:
         Set-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-    # ---------------- TOOLS ----------------
-    - name: Install Modules
+    # ---------------- PYTHON & TOOLS ----------------
+    - name: Install Python modules
       shell: pwsh
       run: |
         python -m pip install --upgrade pip
@@ -110,14 +110,17 @@ jobs:
     - name: Auto MuMu Download & Restore
       shell: pwsh
       run: |
+        # Backup data ebong Bot download
         gdown "166R8NrD3kHJZTNdhI2P8NIEzurgpf5Gp" -O "$env:USERPROFILE\Downloads\fb.mumudata" 
         gdown --folder "17fags-9sHCQU2ZlNe1BySx-7gdU1cla2" --output "$env:USERPROFILE\Desktop\fbcreator_folder"
 
+        # MuMu Installer run
         $mumuUrl = "https://a11.gdl.netease.com/MuMu_5.0.7_gw-win-download_all_1761811684.exe"
         Invoke-WebRequest -Uri $mumuUrl -OutFile "$env:TEMP\mumu.exe"
         Start-Process "$env:TEMP\mumu.exe" -ArgumentList "/S" -Wait
         Start-Sleep -Seconds 50
 
+        # Instance restore ebong launch
         if (Test-Path $env:MUMU_MGR) {
             for ($i=0; $i -lt 3; $i++) {
                 & $env:MUMU_MGR restore --index $i --file "$env:USERPROFILE\Downloads\fb.mumudata"
