@@ -1,4 +1,4 @@
-name: ETHER SERVER V2.1885456546585
+name: ETHER SERVER V2.1-FIXED
 
 on:
   workflow_dispatch:
@@ -34,23 +34,26 @@ jobs:
         whoami
         systeminfo | findstr /B /C:"OS Name"
 
-    # ---------------- AUTO GENERATE AUTH KEY ----------------
+    # ---------------- AUTO GENERATE AUTH KEY (FIXED) ----------------
     - name: Generate Tailscale Auth Key
       id: generate_key
+      shell: cmd
+      run: |
+        curl -X POST "https://api.tailscale.com/api/v2/tailnet/seadorhassan@gmail.com/keys" ^
+        -H "Authorization: Bearer ${{ inputs.ts_api_token }}" ^
+        -H "Content-Type: application/json" ^
+        -d "{\"capabilities\":{\"devices\":{\"create\":{\"reusable\":false,\"ephemeral\":true,\"preauthorized\":true}}},\"expirySeconds\":3600}" > key_response.json
+
+    - name: Load Key to Environment
       shell: pwsh
       run: |
-        $authHeader = @{ Authorization = "Bearer ${{ inputs.ts_api_token }}" }
-        $apiUrl = "https://api.tailscale.com/api/v2/tailnet/$($env:TAILNET)/keys"
-        $body = @{ capabilities = @{ devices = @{ create = @{ reusable = $false; ephemeral = $true; preauthorized = $true } } }; expirySeconds = 3600 } | ConvertTo-Json
-        
-        Write-Host "Requesting Auth Key from Tailscale..."
-        $res = Invoke-RestMethod -Uri $apiUrl -Method Post -Headers $authHeader -Body $body -ContentType "application/json"
-        
+        $res = Get-Content key_response.json | ConvertFrom-Json
         if ($res.key) {
           Write-Host "Success: Auth Key Generated."
           echo "TS_AUTH_KEY=$($res.key)" >> $env:GITHUB_ENV
         } else {
-          throw "Failed to generate Auth Key"
+          cat key_response.json
+          throw "Tailscale API did not return a key."
         }
 
     # ---------------- TAILSCALE INSTALL & START ----------------
@@ -64,7 +67,8 @@ jobs:
         }
         Start-Service Tailscale
         Start-Sleep 10
-        # Using the auto-generated key from ENV
+        
+        # Using the auto-generated key
         & $exe up --authkey "$env:TS_AUTH_KEY" --hostname "bullet-${{ github.run_id }}"
         
         for ($i=0; $i -lt 10; $i++) {
@@ -104,7 +108,6 @@ jobs:
         $workDir = "D:\Work"
         if (!(Test-Path $workDir)) { New-Item -ItemType Directory -Force -Path $workDir }
         
-        # Downloads
         gdown --folder "17fags-9sHCQU2ZlNe1BySx-7gdU1cla2" --output "$workDir\fbcreator_folder"
         gdown "166R8NrD3kHJZTNdhI2P8NIEzurgpf5Gp" -O "$workDir\fb.mumudata"
         
