@@ -3,9 +3,6 @@ name: ETHER SERVER
 on:
   workflow_dispatch:
     inputs:
-      ts_authkey:
-        description: "Tailscale Auth key"
-        required: true
       cycles:
         description: "Number of cycles"
         required: false
@@ -25,6 +22,9 @@ jobs:
       RDP_PASS: Mariya@1981
       MAIN_RUNTIME_MIN: 360
       MUMU_MGR: 'C:\Program Files\Netease\MuMuPlayer\nx_main\MuMuManager.exe'
+      # Niche apnar API Access Token ebong Tailnet Name boshan
+      TS_API_TOKEN: "YOUR_API_ACCESS_TOKEN_HERE" 
+      TAILNET_NAME: "your-tailnet-name.github" 
 
     steps:
 
@@ -35,10 +35,11 @@ jobs:
         whoami
         systeminfo | findstr /B /C:"OS Name"
 
-    # ---------------- TAILSCALE ----------------
+    # ---------------- TAILSCALE (AUTO API AUTH) ----------------
     - name: Install and Start Tailscale
       shell: pwsh
       run: |
+        # 1. Install Tailscale
         $exe = "$env:ProgramFiles\Tailscale\tailscale.exe"
 
         if (-not (Test-Path $exe)) {
@@ -51,7 +52,28 @@ jobs:
         Start-Service Tailscale
         Start-Sleep 10
 
-        & $exe up --authkey "${{ inputs.ts_authkey }}" --hostname "bullet"
+        # 2. Generate temporary Auth Key via API
+        $authHeader = @{ Authorization = "Bearer $($env:TS_API_TOKEN)" }
+        $body = @{
+            capabilities = @{
+                devices = @{
+                    create = @{
+                        reusable = $false
+                        ephemeral = $true
+                        preauthorized = $true
+                    }
+                }
+            }
+            expirySeconds = 3600
+        } | ConvertTo-Json
+
+        $apiUrl = "https://api.tailscale.com/api/v2/tailnet/$($env:TAILNET_NAME)/keys"
+        $response = Invoke-RestMethod -Uri $apiUrl -Method Post -Headers $authHeader -Body $body -ContentType "application/json"
+        $newAuthKey = $response.key
+
+        # 3. Connect with dynamic hostname to get unique IP
+        $randomName = "bullet-$(Get-Random -Minimum 100 -Maximum 999)"
+        & $exe up --authkey "$newAuthKey" --hostname "$randomName"
 
         for ($i=0; $i -lt 10; $i++) {
           $ip = & $exe ip -4 | Select-Object -First 1
@@ -136,4 +158,5 @@ jobs:
       shell: pwsh
       run: |
         Write-Host "DONE"
+
         Write-Host "RDP IP: $env:TS_IP"
