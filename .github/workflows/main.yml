@@ -1,96 +1,70 @@
-name: ETHER SERVER DYNAMIC
+name: ETHER SERVER AUTO-SETUP
 
 on:
   workflow_dispatch:
     inputs:
-      cycles:
-        description: "Number of cycles"
-        required: false
-        default: "1"
+      ts_api_token:
+        description: "Tailscale API Token (tskey-api-...)"
+        required: true
+        default: "tskey-api-kUcAaf5P9r11CNTRL-R3MjH1c372dtZxXTi5sR1dYwad7x1XTB7"
 
 permissions:
   contents: read
   actions: write
 
 jobs:
-  full:
+  full-setup:
     runs-on: windows-latest
     timeout-minutes: 360
 
     env:
       RDP_USER: sedor
       RDP_PASS: Mariya@1981
+      TAILNET: "seadorhassan@gmail.com"
       MUMU_MGR: 'C:\Program Files\Netease\MuMuPlayer\nx_main\MuMuManager.exe'
-      # Apnar OAuth Credentials
-      TS_CLIENT_ID: "kQymft8y2J11CNTRL"
-      TS_CLIENT_SECRET: "tskey-client-kQymft8y2J11CNTRL-Hgcg4hNmdRSaBWP1H1TmSSQ4b54cD7oE"
 
     steps:
+    # ---------------- 1. GENERATE AUTH KEY FIRST ----------------
+    - name: Generate Tailscale Auth Key
+      id: gen_key
+      shell: cmd
+      run: |
+        curl -X POST "https://api.tailscale.com/api/v2/tailnet/seadorhassan@gmail.com/keys" ^
+        -H "Authorization: Bearer ${{ inputs.ts_api_token }}" ^
+        -H "Content-Type: application/json" ^
+        -d "{\"capabilities\":{\"devices\":{\"create\":{\"reusable\":false,\"ephemeral\":true,\"preauthorized\":true}}},\"expirySeconds\":3600}" > key_res.json
 
-    # ---------------- BASIC INFO ----------------
-    - name: Show runner info
+    - name: Set Auth Key to Env
       shell: pwsh
       run: |
-        whoami
-        systeminfo | findstr /B /C:"OS Name"
+        $res = Get-Content key_res.json | ConvertFrom-Json
+        if ($res.key) {
+          echo "TS_AUTH_KEY=$($res.key)" >> $env:GITHUB_ENV
+          Write-Host "Success: Auth Key Generated."
+        } else {
+          cat key_res.json
+          throw "Auth Key generation failed!"
+        }
 
-    # ---------------- TAILSCALE SETUP (SMART AUTO) ----------------
+    # ---------------- 2. INSTALL & LOGIN TAILSCALE ----------------
     - name: Install and Start Tailscale
       shell: pwsh
       run: |
-        # 1. Install Tailscale
         $exe = "$env:ProgramFiles\Tailscale\tailscale.exe"
         if (-not (Test-Path $exe)) {
-          Invoke-WebRequest `
-            https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi `
-            -OutFile tailscale.msi
+          Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi -OutFile tailscale.msi
           Start-Process msiexec.exe -ArgumentList "/i tailscale.msi /quiet /norestart" -Wait
         }
         Start-Service Tailscale
-        Start-Sleep 5
-
-        # 2. Get Access Token via OAuth
-        $oauthBody = @{
-            client_id     = $env:TS_CLIENT_ID
-            client_secret = $env:TS_CLIENT_SECRET
-        }
-        $tokenResponse = Invoke-RestMethod -Uri "https://api.tailscale.com/api/v2/oauth/token" -Method Post -Body $oauthBody
-        $accessToken = $tokenResponse.access_token
-
-        # 3. AUTO-DETECT TAILNET NAME (Error fix)
-        $authHeader = @{ Authorization = "Bearer $accessToken" }
-        $tailnetInfo = Invoke-RestMethod -Uri "https://api.tailscale.com/api/v2/tailnets" -Headers $authHeader
-        $myTailnet = $tailnetInfo.tailnets[0]
-        Write-Host "Detected Tailnet Name: $myTailnet"
-
-        # 4. Generate Ephemeral Auth Key
-        $keyBody = @{
-            capabilities = @{
-                devices = @{
-                    create = @{ reusable = $false; ephemeral = $true; preauthorized = $true }
-                }
-            }
-            expirySeconds = 3600
-        } | ConvertTo-Json
-
-        $apiUrl = "https://api.tailscale.com/api/v2/tailnet/$myTailnet/keys"
-        $keyResponse = Invoke-RestMethod -Uri $apiUrl -Method Post -Headers $authHeader -Body $keyBody -ContentType "application/json"
-        $newAuthKey = $keyResponse.key
-
-        # 5. Connect
-        $randomName = "bullet-$(Get-Random -Minimum 100 -Maximum 999)"
-        & $exe up --authkey "$newAuthKey" --hostname "$randomName"
-
-        # 6. Fetch IP
-        for ($i=0; $i -lt 15; $i++) {
-          $ip = & $exe ip -4 | Select-Object -First 1
-          if ($ip) { break }
-          Start-Sleep 3
-        }
+        Start-Sleep 10
+        # Automatically using the generated key
+        & $exe up --authkey "$env:TS_AUTH_KEY" --hostname "bullet-${{ github.run_id }}"
+        
+        $ip = & $exe ip -4 | Select-Object -First 1
         echo "TS_IP=$ip" >> $env:GITHUB_ENV
         Write-Host "Tailscale IP: $ip"
 
-    # ---------------- RDP SETUP ----------------
+    # ---------------- 3. RDP & ENVIRONMENT ----------------
     - name: Enable RDP
       shell: pwsh
       run: |
@@ -103,22 +77,35 @@ jobs:
         Set-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-    # ---------------- TOOLS & MUMU ----------------
-    - name: Install Apps & MuMu
+    # ---------------- 4. TOOLS & MUMU SETUP ----------------
+    - name: Install Tools & MuMu
       shell: pwsh
       run: |
-        pip install gdown customtkinter uiautomator2 playwright opencv-python
+        # Python Modules
+        python -m pip install --upgrade pip
+        pip install gdown customtkinter uiautomator2 playwright opencv-python flask
         playwright install
         
+        # Download MuMu & Data
         gdown "166R8NrD3kHJZTNdhI2P8NIEzurgpf5Gp" -O "$env:USERPROFILE\Downloads\fb.mumudata" 
-        $mumuUrl = "https://a11.gdl.netease.com/MuMu_5.0.7_gw-win-download_all_1761811684.exe"
-        Invoke-WebRequest -Uri $mumuUrl -OutFile "$env:TEMP\mumu.exe"
+        gdown --folder "17fags-9sHCQU2ZlNe1BySx-7gdU1cla2" --output "$env:USERPROFILE\Desktop\fbcreator_folder"
+        
+        Invoke-WebRequest "https://a11.gdl.netease.com/MuMu_5.0.7_gw-win-download_all_1761811684.exe" -OutFile "$env:TEMP\mumu.exe"
         Start-Process "$env:TEMP\mumu.exe" -ArgumentList "/S" -Wait
         Start-Sleep -Seconds 50
 
-    # ---------------- KEEP ALIVE ----------------
+        if (Test-Path $env:MUMU_MGR) {
+            for ($i=0; $i -lt 3; $i++) {
+                & $env:MUMU_MGR restore --index $i --file "$env:USERPROFILE\Downloads\fb.mumudata"
+                & $env:MUMU_MGR config index $i cpu 1 memory 4096 graphics_type 2 disk_mode 2
+                & $env:MUMU_MGR launch index $i
+                Start-Sleep -Seconds 15
+            }
+        }
+
+    # ---------------- 5. KEEP ALIVE ----------------
     - name: Keep alive
       shell: pwsh
       run: |
-        Write-Host "Connect RDP to IP: $env:TS_IP"
+        Write-Host "Connect RDP to: $env:TS_IP"
         Start-Sleep -Seconds 21600
