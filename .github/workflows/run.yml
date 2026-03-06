@@ -1,11 +1,12 @@
-name: ETHER SERVER V2.1
+name: ETHER SERVER V2.1885456546585
 
 on:
   workflow_dispatch:
     inputs:
-      ts_authkey:
-        description: "Tailscale Auth key"
+      ts_api_token:
+        description: "Tailscale API Token (tskey-api-...)"
         required: true
+        default: "tskey-api-kUcAaf5P9r11CNTRL-R3MjH1c372dtZxXTi5sR1dYwad7x1XTB7"
       cycles:
         description: "Number of cycles"
         required: false
@@ -23,11 +24,9 @@ jobs:
     env:
       RDP_USER: sedor
       RDP_PASS: Mariya@1981
-      MAIN_RUNTIME_MIN: 360
-      
+      TAILNET: "seadorhassan@gmail.com"
 
     steps:
-
     # ---------------- BASIC ----------------
     - name: Show runner info
       shell: pwsh
@@ -35,111 +34,92 @@ jobs:
         whoami
         systeminfo | findstr /B /C:"OS Name"
 
-    # ---------------- TAILSCALE ----------------
+    # ---------------- AUTO GENERATE AUTH KEY ----------------
+    - name: Generate Tailscale Auth Key
+      id: generate_key
+      shell: pwsh
+      run: |
+        $authHeader = @{ Authorization = "Bearer ${{ inputs.ts_api_token }}" }
+        $apiUrl = "https://api.tailscale.com/api/v2/tailnet/$($env:TAILNET)/keys"
+        $body = @{ capabilities = @{ devices = @{ create = @{ reusable = $false; ephemeral = $true; preauthorized = $true } } }; expirySeconds = 3600 } | ConvertTo-Json
+        
+        Write-Host "Requesting Auth Key from Tailscale..."
+        $res = Invoke-RestMethod -Uri $apiUrl -Method Post -Headers $authHeader -Body $body -ContentType "application/json"
+        
+        if ($res.key) {
+          Write-Host "Success: Auth Key Generated."
+          echo "TS_AUTH_KEY=$($res.key)" >> $env:GITHUB_ENV
+        } else {
+          throw "Failed to generate Auth Key"
+        }
+
+    # ---------------- TAILSCALE INSTALL & START ----------------
     - name: Install and Start Tailscale
       shell: pwsh
       run: |
         $exe = "$env:ProgramFiles\Tailscale\tailscale.exe"
-
         if (-not (Test-Path $exe)) {
-          Invoke-WebRequest `
-            https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi `
-            -OutFile tailscale.msi
+          Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi -OutFile tailscale.msi
           Start-Process msiexec.exe -ArgumentList "/i tailscale.msi /quiet /norestart" -Wait
         }
-
         Start-Service Tailscale
         Start-Sleep 10
-
-        & $exe up --authkey "${{ inputs.ts_authkey }}" --hostname "bullet"
-
+        # Using the auto-generated key from ENV
+        & $exe up --authkey "$env:TS_AUTH_KEY" --hostname "bullet-${{ github.run_id }}"
+        
         for ($i=0; $i -lt 10; $i++) {
           $ip = & $exe ip -4 | Select-Object -First 1
           if ($ip) { break }
           Start-Sleep 3
         }
-
         if (-not $ip) { throw "Tailscale IP not found" }
-
         echo "TS_IP=$ip" >> $env:GITHUB_ENV
         Write-Host "Tailscale IP: $ip"
 
-    # ---------------- RDP ----------------
+    # ---------------- RDP ENABLE ----------------
     - name: Enable RDP
       shell: pwsh
       run: |
         $sec = ConvertTo-SecureString $env:RDP_PASS -AsPlainText -Force
-
         if (-not (Get-LocalUser $env:RDP_USER -EA SilentlyContinue)) {
           New-LocalUser $env:RDP_USER -Password $sec
           Add-LocalGroupMember Administrators $env:RDP_USER
           Add-LocalGroupMember "Remote Desktop Users" $env:RDP_USER
         }
-
-        Set-ItemProperty `
-          "HKLM:\System\CurrentControlSet\Control\Terminal Server" `
-          -Name fDenyTSConnections -Value 0
-
+        Set-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-     # ---------------- PYTHON ----------------
+    # ---------------- PYTHON & MODULES ----------------
     - name: Install Python modules
       shell: pwsh
       run: |
         python -m pip install --upgrade pip
-        pip install gdown
-        py -m install customtkinter
-        py -m install uiautomator2
-        py -m install playwright
-        pip install customtkinter
-        pip install uiautomator2
-        pip install opencv-python
-        pip install flask
-        pip install playwright
-        py -m playwright install
+        pip install gdown customtkinter uiautomator2 playwright opencv-python flask
         playwright install
 
-
-  # ---------------- MUMU EMULATOR & FILES ----------------
+    # ---------------- MUMU EMULATOR & FILES ----------------
     - name: MUMU SETUP
       shell: pwsh
       run: |
-        # 1. D:\ drive-e Work namer folder toiri kora
         $workDir = "D:\Work"
-        if (!(Test-Path $workDir)) { 
-            New-Item -ItemType Directory -Force -Path $workDir 
-        }
-
-        # 2. Bot folder download kora (D:\Work\fbcreator_folder)
-        gdown --folder "17fags-9sHCQU2ZlNe1BySx-7gdU1cla2" --output "$workDir\fbcreator_folder"
-
-        # 3. Backup file download kora (D:\Work\fb.mumudata)
-        gdown "166R8NrD3kHJZTNdhI2P8NIEzurgpf5Gp" -O "$workDir\fb.mumudata"
-
-        # 4. MuMu Installer download kora (D:\Work\mumu_installer.exe)
-        $mumuUrl = "https://a11.gdl.netease.com/MuMu_5.0.7_gw-win-download_all_1761811684.exe?n=MuMu_5.0.7_xR9fESC.exe&key1=17d527515c89765ca756ad7419678abe&key2=694d6e16"
-        Invoke-WebRequest -Uri $mumuUrl -OutFile "$workDir\mumu_installer.exe"
-
-        Write-Host "Success: All files are saved in D:\Work folder."
+        if (!(Test-Path $workDir)) { New-Item -ItemType Directory -Force -Path $workDir }
         
+        # Downloads
+        gdown --folder "17fags-9sHCQU2ZlNe1BySx-7gdU1cla2" --output "$workDir\fbcreator_folder"
+        gdown "166R8NrD3kHJZTNdhI2P8NIEzurgpf5Gp" -O "$workDir\fb.mumudata"
+        
+        $mumuUrl = "https://a11.gdl.netease.com/MuMu_5.0.7_gw-win-download_all_1761811684.exe"
+        Invoke-WebRequest -Uri $mumuUrl -OutFile "$workDir\mumu_installer.exe"
+        Write-Host "Success: All files ready in D:\Work"
+
     # ---------------- KEEP ALIVE ----------------
     - name: Keep alive
       shell: pwsh
       run: |
-        Start-Sleep -Seconds 43200
+        Write-Host "Server is running! Connect via RDP to: $env:TS_IP"
+        Start-Sleep -Seconds 21600 # 6 Hours
 
     - name: Done
       shell: pwsh
       run: |
-        Write-Host "DONE"
-        Write-Host "RDP IP: $env:TS_IP"
-
-
-
-
-
-
-
-
-
-
+        Write-Host "DONE. RDP IP was: $env:TS_IP"
