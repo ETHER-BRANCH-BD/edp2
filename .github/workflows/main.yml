@@ -1,4 +1,4 @@
-name: ETHER SERVER lllll
+name: ETHER SERVER mula
 
 on:
   workflow_dispatch:
@@ -21,8 +21,10 @@ jobs:
       RDP_USER: sedor
       RDP_PASS: Mariya@1981
       MUMU_MGR: 'C:\Program Files\Netease\MuMuPlayer\nx_main\MuMuManager.exe'
-      # Apnar deya API Access Token
-      TS_API_TOKEN: "tskey-api-kfijnds9kK11CNTRL-rwjxd1ZXjvABKqHPeJi3vAFJzQGURkEvg"
+      # Apnar OAuth Credentials
+      TS_CLIENT_ID: "kQymft8y2J11CNTRL"
+      TS_CLIENT_SECRET: "tskey-client-kQymft8y2J11CNTRL-Hgcg4hNmdRSaBWP1H1TmSSQ4b54cD7oE"
+      TAILNET_NAME: "armanhossain00778.github" # Apnar dashboard theke
 
     steps:
 
@@ -33,7 +35,7 @@ jobs:
         whoami
         systeminfo | findstr /B /C:"OS Name"
 
-    # ---------------- TAILSCALE AUTO-AUTH ----------------
+    # ---------------- TAILSCALE SETUP ----------------
     - name: Install and Start Tailscale
       shell: pwsh
       run: |
@@ -48,12 +50,17 @@ jobs:
         Start-Service Tailscale
         Start-Sleep 5
 
-        # 2. Auto-detect Tailnet Name and Generate Ephemeral Key
-        $authHeader = @{ Authorization = "Bearer $($env:TS_API_TOKEN)" }
-        $whois = Invoke-RestMethod -Uri "https://api.tailscale.com/api/v2/tailnets" -Headers $authHeader
-        $tailnet = $whois.tailnets[0]
-        
-        $body = @{
+        # 2. Get Access Token using OAuth Client ID & Secret
+        $oauthBody = @{
+            client_id     = $env:TS_CLIENT_ID
+            client_secret = $env:TS_CLIENT_SECRET
+        }
+        $tokenResponse = Invoke-RestMethod -Uri "https://api.tailscale.com/api/v2/oauth/token" -Method Post -Body $oauthBody
+        $accessToken = $tokenResponse.access_token
+
+        # 3. Generate Ephemeral Auth Key via API
+        $authHeader = @{ Authorization = "Bearer $accessToken" }
+        $keyBody = @{
             capabilities = @{
                 devices = @{
                     create = @{
@@ -66,16 +73,16 @@ jobs:
             expirySeconds = 3600
         } | ConvertTo-Json
 
-        $apiUrl = "https://api.tailscale.com/api/v2/tailnet/$tailnet/keys"
-        $response = Invoke-RestMethod -Uri $apiUrl -Method Post -Headers $authHeader -Body $body -ContentType "application/json"
-        $newAuthKey = $response.key
+        $apiUrl = "https://api.tailscale.com/api/v2/tailnet/$($env:TAILNET_NAME)/keys"
+        $keyResponse = Invoke-RestMethod -Uri $apiUrl -Method Post -Headers $authHeader -Body $keyBody -ContentType "application/json"
+        $newAuthKey = $keyResponse.key
 
-        # 3. Connect with unique hostname to avoid conflicts
+        # 4. Connect with unique hostname
         $randomName = "bullet-$(Get-Random -Minimum 100 -Maximum 999)"
         & $exe up --authkey "$newAuthKey" --hostname "$randomName"
 
-        # 4. Fetch Tailscale IP
-        for ($i=0; $i -lt 10; $i++) {
+        # 5. Fetch Tailscale IP
+        for ($i=0; $i -lt 15; $i++) {
           $ip = & $exe ip -4 | Select-Object -First 1
           if ($ip) { break }
           Start-Sleep 3
@@ -110,17 +117,14 @@ jobs:
     - name: Auto MuMu Download & Restore
       shell: pwsh
       run: |
-        # Backup data ebong Bot download
         gdown "166R8NrD3kHJZTNdhI2P8NIEzurgpf5Gp" -O "$env:USERPROFILE\Downloads\fb.mumudata" 
         gdown --folder "17fags-9sHCQU2ZlNe1BySx-7gdU1cla2" --output "$env:USERPROFILE\Desktop\fbcreator_folder"
 
-        # MuMu Installer run
         $mumuUrl = "https://a11.gdl.netease.com/MuMu_5.0.7_gw-win-download_all_1761811684.exe"
         Invoke-WebRequest -Uri $mumuUrl -OutFile "$env:TEMP\mumu.exe"
         Start-Process "$env:TEMP\mumu.exe" -ArgumentList "/S" -Wait
         Start-Sleep -Seconds 50
 
-        # Instance restore ebong launch
         if (Test-Path $env:MUMU_MGR) {
             for ($i=0; $i -lt 3; $i++) {
                 & $env:MUMU_MGR restore --index $i --file "$env:USERPROFILE\Downloads\fb.mumudata"
