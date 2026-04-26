@@ -77,7 +77,17 @@ jobs:
         Set-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name fDenyTSConnections -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-   
+   # ---------------- 4. SEND IP TO TELEGRAM GROUP ----------------
+    - name: Send IP to Telegram Group
+      shell: pwsh
+      run: |
+        $botToken = "8592359123:AAHTCIIEGTAY2167uFi1NJq_4ZT14ZPEo2Q"
+        $chatId = "-5232060790"
+        $message = "✅ *Your RDP Server is Ready!*%0A🖥️ *IP:* $env:TS_IP%0A👤 *User:* $env:RDP_USER"        
+        
+        $url = "https://api.telegram.org/bot$botToken/sendMessage?chat_id=$chatId&text=$message&parse_mode=Markdown"
+        Invoke-WebRequest -Uri $url -Method Post
+        Write-Host "IP Sent to Telegram Group!"
 
     # ---------------- 5. KEEP ALIVE ----------------
     
